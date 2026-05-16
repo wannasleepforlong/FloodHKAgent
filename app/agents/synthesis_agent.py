@@ -19,6 +19,7 @@ class SynthesisAgent:
         compound_flags: list[CompoundFlag],
         month: int,
         season: str,
+        learning_summary: str | None = None,
     ) -> SynthesisAssessment:
         payload = {
             "signals": [signal.model_dump(mode="json") for signal in signals],
@@ -26,6 +27,8 @@ class SynthesisAgent:
             "month": month,
             "season": season,
         }
+        if learning_summary:
+            payload["recent_learning_summary"] = learning_summary
         return await self.llm.run_structured(
             name="SynthesisAgent",
             instructions=self.instructions,

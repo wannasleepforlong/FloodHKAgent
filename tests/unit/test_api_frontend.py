@@ -19,3 +19,11 @@ def test_recent_runs_endpoint_returns_list():
     payload = response.json()
     assert "runs" in payload
     assert isinstance(payload["runs"], list)
+
+
+def test_district_geojson_is_served():
+    response = client.get("/data/hksar_18_district_boundary.json")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["type"] == "FeatureCollection"
+    assert len(payload["features"]) >= 18

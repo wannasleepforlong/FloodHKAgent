@@ -132,6 +132,72 @@
             Loading recent runs...
           </div>
         </section>
+
+        <section class="panel panel-map">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Geo view</p>
+              <h2>Hong Kong district risk map</h2>
+            </div>
+            <span class="timestamp">Real district boundaries</span>
+          </div>
+          <div class="map-panel">
+            <div class="map-stage">
+              <svg
+                id="hk-risk-map"
+                class="hk-map"
+                viewBox="0 0 1000 740"
+                role="img"
+                aria-labelledby="hk-map-title hk-map-desc"
+              >
+                <title id="hk-map-title">Hong Kong district risk map</title>
+                <desc id="hk-map-desc">Real Hong Kong district boundaries colored by live flood risk score.</desc>
+                <defs>
+                  <radialGradient id="map-vignette" cx="50%" cy="42%" r="74%">
+                    <stop offset="0%" stop-color="rgba(36, 201, 255, 0.18)"></stop>
+                    <stop offset="100%" stop-color="rgba(1, 9, 15, 0)"></stop>
+                  </radialGradient>
+                </defs>
+                <rect class="map-backdrop" x="0" y="0" width="1000" height="740"></rect>
+                <rect class="map-glow" x="0" y="0" width="1000" height="740" fill="url(#map-vignette)"></rect>
+                <g id="hk-map-grid" class="map-grid"></g>
+                <g id="hk-map-districts" class="map-districts"></g>
+              </svg>
+
+              <aside class="map-inspector" id="map-inspector">
+                <div class="map-inspector-top">
+                  <span class="card-label">Selection</span>
+                  <span id="map-inspector-pill" class="alert-pill neutral">No run</span>
+                </div>
+                <h3 id="map-inspector-name">Hong Kong</h3>
+                <p id="map-inspector-copy" class="map-copy">
+                  Load a live assessment to color the real district boundaries and inspect each district.
+                </p>
+                <div class="map-inspector-metrics">
+                  <article>
+                    <span class="metric-label">District risk</span>
+                    <strong id="map-inspector-score">--</strong>
+                  </article>
+                  <article>
+                    <span class="metric-label">Driver</span>
+                    <strong id="map-inspector-driver">--</strong>
+                  </article>
+                  <article>
+                    <span class="metric-label">Confidence</span>
+                    <strong id="map-inspector-confidence">--</strong>
+                  </article>
+                </div>
+              </aside>
+            </div>
+
+            <div class="map-legend">
+              <span><i class="legend-swatch low"></i> Low</span>
+              <span><i class="legend-swatch medium"></i> Moderate</span>
+              <span><i class="legend-swatch high"></i> High</span>
+              <span><i class="legend-swatch extreme"></i> Extreme</span>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
 

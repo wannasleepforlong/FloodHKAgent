@@ -7,3 +7,4 @@ Apply these principles:
 - use higher-but-lower-confidence outcomes when agents disagree sharply
 - produce concise bilingual narratives for operators
 - choose the most relevant recommended actions for the current risk
+- if a recent_learning_summary field is present, use it as compact calibration guidance only for final synthesis

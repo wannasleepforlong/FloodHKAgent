@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from app.models.schemas import (
     AlertLevel,
     DistrictScore,
     FloodAlertOutput,
+    PredictionValidation,
     PredictionWindow,
     RecommendedAction,
     SystemHealth,
@@ -88,6 +90,54 @@ def test_run_history_finds_closest_prediction_match(tmp_path):
     assert matched.run_id == "closer"
 
 
+def test_run_history_returns_none_when_no_prediction_match(tmp_path):
+    history = RunHistoryService(tmp_path)
+    actual_time = datetime(2026, 5, 16, 12, 0, tzinfo=UTC)
+    prior = _make_run(
+        run_id="prior",
+        generated_at=actual_time - timedelta(hours=3),
+        score=4.0,
+        alert_level=AlertLevel.YELLOW,
+        target_time=actual_time + timedelta(minutes=12),
+    )
+    (tmp_path / "prior.json").write_text(prior.model_dump_json(indent=2), encoding="utf-8")
+
+    assert history.find_prediction_match(actual_time=actual_time, tolerance_minutes=5) is None
+
+
+def test_run_history_skips_malformed_log_and_builds_summary(tmp_path):
+    history = RunHistoryService(tmp_path)
+    (tmp_path / "broken.json").write_text("{not-json", encoding="utf-8")
+
+    validated = _make_run(
+        run_id="validated",
+        generated_at=datetime(2026, 5, 16, 12, 0, tzinfo=UTC),
+        score=6.0,
+        alert_level=AlertLevel.AMBER,
+    )
+    validated.validation = PredictionValidation(
+        matched_run_id="prior",
+        matched_predicted_at=datetime(2026, 5, 16, 9, 0, tzinfo=UTC),
+        actual_generated_at=validated.generated_at,
+        target_time=datetime(2026, 5, 16, 12, 0, tzinfo=UTC),
+        time_delta_minutes=0.0,
+        risk_score_error=1.25,
+        abs_risk_score_error=1.25,
+        alert_level_match=False,
+        within_tolerance=True,
+    )
+    (tmp_path / "validated.json").write_text(
+        validated.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    summary = history.build_learning_summary(limit=10)
+    assert summary is not None
+    assert summary.source == "local"
+    assert summary.recent_validation_count == 1
+    assert "Mean signed error" in summary.summary_text
+
+
 def test_prediction_learning_builds_validation_and_summary(tmp_path, monkeypatch):
     monkeypatch.setenv("FLOOD_SWARM_PREDICTION_HORIZON_MINUTES", "180")
     monkeypatch.setenv("FLOOD_SWARM_MATCH_TOLERANCE_MINUTES", "5")
@@ -120,3 +170,85 @@ def test_prediction_learning_builds_validation_and_summary(tmp_path, monkeypatch
     assert outcome.learning_summary is not None
     assert outcome.learning_summary.recent_validation_count == 1
     assert "Mean signed error" in outcome.learning_summary.summary_text
+
+
+def test_prediction_learning_degrades_gracefully_when_letta_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOOD_SWARM_PREDICTION_HORIZON_MINUTES", "180")
+    monkeypatch.setenv("FLOOD_SWARM_MATCH_TOLERANCE_MINUTES", "5")
+    settings = get_settings()
+    history = RunHistoryService(tmp_path)
+
+    class FailingLettaClient:
+        enabled = True
+
+        async def fetch_learning_summary(self):
+            raise RuntimeError("fetch failed")
+
+        async def store_validation_lesson(self, lesson_text: str):
+            raise RuntimeError("store failed")
+
+    service = PredictionLearningService(
+        settings=settings,
+        run_history=history,
+        letta_client=FailingLettaClient(),
+    )
+
+    prior_generated_at = datetime(2026, 5, 16, 9, 0, tzinfo=UTC)
+    prior = _make_run(
+        run_id="prior",
+        generated_at=prior_generated_at,
+        score=4.5,
+        alert_level=AlertLevel.YELLOW,
+        target_time=datetime(2026, 5, 16, 12, 0, tzinfo=UTC),
+    )
+    (tmp_path / "prior.json").write_text(prior.model_dump_json(indent=2), encoding="utf-8")
+
+    current = _make_run(
+        run_id="current",
+        generated_at=datetime(2026, 5, 16, 12, 0, tzinfo=UTC),
+        score=6.0,
+        alert_level=AlertLevel.AMBER,
+    )
+
+    summary = __import__("asyncio").run(service.get_learning_summary())
+    assert summary is None
+
+    outcome = __import__("asyncio").run(service.finalize_run(current))
+    assert outcome.validation is not None
+    assert current.prediction_window is not None
+    assert current.validation is not None
+
+
+def test_prediction_learning_prefers_local_summary_when_letta_disabled(tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOOD_SWARM_PREDICTION_HORIZON_MINUTES", "180")
+    monkeypatch.setenv("FLOOD_SWARM_MATCH_TOLERANCE_MINUTES", "5")
+    settings = get_settings()
+    history = RunHistoryService(tmp_path)
+
+    validated = _make_run(
+        run_id="validated",
+        generated_at=datetime(2026, 5, 16, 12, 0, tzinfo=UTC),
+        score=6.0,
+        alert_level=AlertLevel.AMBER,
+    )
+    validated.validation = PredictionValidation(
+        matched_run_id="prior",
+        matched_predicted_at=datetime(2026, 5, 16, 9, 0, tzinfo=UTC),
+        actual_generated_at=validated.generated_at,
+        target_time=datetime(2026, 5, 16, 12, 0, tzinfo=UTC),
+        time_delta_minutes=0.0,
+        risk_score_error=-0.5,
+        abs_risk_score_error=0.5,
+        alert_level_match=True,
+        within_tolerance=True,
+    )
+    (tmp_path / "validated.json").write_text(validated.model_dump_json(indent=2), encoding="utf-8")
+
+    service = PredictionLearningService(
+        settings=settings,
+        run_history=history,
+        letta_client=SimpleNamespace(enabled=False),
+    )
+    summary = __import__("asyncio").run(service.get_learning_summary())
+    assert summary is not None
+    assert summary.source == "local"

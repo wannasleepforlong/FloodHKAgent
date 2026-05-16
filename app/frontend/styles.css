@@ -287,6 +287,10 @@ select {
   font-size: 1.45rem;
 }
 
+.panel-map {
+  overflow: hidden;
+}
+
 .narrative-columns {
   display: grid;
   grid-template-columns: 1fr;
@@ -433,6 +437,183 @@ select {
   display: block;
 }
 
+.map-panel {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.map-stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 30rem;
+  border-radius: 1.35rem;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(57, 211, 255, 0.2), transparent 28%),
+    radial-gradient(circle at 85% 18%, rgba(255, 109, 61, 0.16), transparent 24%),
+    linear-gradient(180deg, rgba(8, 18, 29, 0.98), rgba(5, 14, 23, 0.98));
+  border: 1px solid rgba(124, 224, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.hk-map {
+  display: block;
+  width: 100%;
+  min-height: 30rem;
+}
+
+.map-backdrop {
+  fill: rgba(8, 15, 22, 0.95);
+}
+
+.map-grid line {
+  stroke: rgba(124, 224, 255, 0.08);
+  stroke-width: 1;
+}
+
+.district-shape {
+  cursor: pointer;
+}
+
+.district-shape path {
+  stroke: rgba(214, 244, 255, 0.26);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+  transition: fill 180ms ease, stroke 180ms ease, filter 180ms ease;
+}
+
+.district-shape:hover path,
+.district-shape:focus-visible path,
+.district-shape.selected path {
+  stroke: rgba(255, 255, 255, 0.9);
+  filter: drop-shadow(0 0 18px rgba(34, 210, 255, 0.18));
+}
+
+.district-shape.top-risk path {
+  stroke: rgba(255, 255, 255, 0.95);
+  filter: drop-shadow(0 0 22px rgba(255, 108, 77, 0.28));
+}
+
+.district-shape.risk-low path {
+  fill: #16334a;
+}
+
+.district-shape.risk-medium path {
+  fill: #146da6;
+}
+
+.district-shape.risk-high path {
+  fill: #f2a83d;
+}
+
+.district-shape.risk-extreme path {
+  fill: #dd4734;
+}
+
+.district-label {
+  fill: rgba(238, 247, 255, 0.88);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.75rem;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(5, 10, 16, 0.86);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.map-inspector {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  z-index: 2;
+  width: min(20rem, calc(100% - 2rem));
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-radius: 1.2rem;
+  background: linear-gradient(180deg, rgba(7, 16, 29, 0.92), rgba(6, 17, 28, 0.78));
+  border: 1px solid rgba(124, 224, 255, 0.16);
+  box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(1rem);
+}
+
+.map-inspector-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.map-inspector h3 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.map-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.map-inspector-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.map-inspector-metrics article {
+  padding: 0.85rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.map-inspector-metrics strong {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.95rem;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.legend-swatch.low {
+  background: #16334a;
+}
+
+.legend-swatch.medium {
+  background: #146da6;
+}
+
+.legend-swatch.high {
+  background: #f2a83d;
+}
+
+.legend-swatch.extreme {
+  background: #dd4734;
+}
+
 @media (min-width: 48rem) {
   .app-shell {
     padding: 1.5rem;
@@ -460,5 +641,31 @@ select {
 
   .panel-narrative {
     grid-column: span 2;
+  }
+
+  .panel-map {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .map-stage,
+  .hk-map {
+    min-height: 35rem;
+  }
+
+  .map-inspector {
+    position: static;
+    width: auto;
+    margin: 1rem;
+    margin-bottom: 0;
+  }
+
+  .map-inspector-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .district-label {
+    font-size: 0.62rem;
   }
 }

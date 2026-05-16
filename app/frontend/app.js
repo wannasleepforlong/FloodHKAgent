@@ -1,6 +1,8 @@
 const state = {
   currentRun: null,
   history: [],
+  geojson: null,
+  selectedDistrict: null,
 };
 
 const elements = {
@@ -20,6 +22,14 @@ const elements = {
   agentsGrid: document.querySelector("#agents-grid"),
   flagsList: document.querySelector("#flags-list"),
   historyList: document.querySelector("#history-list"),
+  mapDistricts: document.querySelector("#hk-map-districts"),
+  mapGrid: document.querySelector("#hk-map-grid"),
+  mapInspectorPill: document.querySelector("#map-inspector-pill"),
+  mapInspectorName: document.querySelector("#map-inspector-name"),
+  mapInspectorCopy: document.querySelector("#map-inspector-copy"),
+  mapInspectorScore: document.querySelector("#map-inspector-score"),
+  mapInspectorDriver: document.querySelector("#map-inspector-driver"),
+  mapInspectorConfidence: document.querySelector("#map-inspector-confidence"),
 };
 
 const alertClassMap = {
@@ -29,6 +39,9 @@ const alertClassMap = {
   RED: "red",
   BLACK: "black",
 };
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const MAP_VIEWBOX = { width: 1000, height: 740, padding: 44 };
 
 function setStatus(message, isError = false) {
   elements.statusLine.textContent = message;
@@ -190,6 +203,215 @@ function renderHistory() {
     .join("");
 }
 
+function riskBand(score) {
+  if (score >= 8) {
+    return "risk-extreme";
+  }
+  if (score >= 6) {
+    return "risk-high";
+  }
+  if (score >= 3) {
+    return "risk-medium";
+  }
+  return "risk-low";
+}
+
+function projectFactory(features) {
+  let minLon = Infinity;
+  let minLat = Infinity;
+  let maxLon = -Infinity;
+  let maxLat = -Infinity;
+
+  const visit = (coordinates) => {
+    if (typeof coordinates?.[0] === "number") {
+      const [lon, lat] = coordinates;
+      minLon = Math.min(minLon, lon);
+      maxLon = Math.max(maxLon, lon);
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      return;
+    }
+    coordinates?.forEach?.(visit);
+  };
+
+  features.forEach((feature) => visit(feature.geometry?.coordinates));
+
+  const width = maxLon - minLon || 1;
+  const height = maxLat - minLat || 1;
+  const scale = Math.min(
+    (MAP_VIEWBOX.width - MAP_VIEWBOX.padding * 2) / width,
+    (MAP_VIEWBOX.height - MAP_VIEWBOX.padding * 2) / height
+  );
+  const offsetX = (MAP_VIEWBOX.width - width * scale) / 2;
+  const offsetY = (MAP_VIEWBOX.height - height * scale) / 2;
+
+  return ([lon, lat]) => {
+    const x = offsetX + (lon - minLon) * scale;
+    const y = MAP_VIEWBOX.height - (offsetY + (lat - minLat) * scale);
+    return [Number(x.toFixed(2)), Number(y.toFixed(2))];
+  };
+}
+
+function polygonToPath(rings, project) {
+  return rings
+    .map((ring) =>
+      ring
+        .map((coordinate, index) => {
+          const [x, y] = project(coordinate);
+          return `${index === 0 ? "M" : "L"}${x} ${y}`;
+        })
+        .join(" ") + " Z"
+    )
+    .join(" ");
+}
+
+function geometryToPath(geometry, project) {
+  if (!geometry) {
+    return "";
+  }
+  if (geometry.type === "Polygon") {
+    return polygonToPath(geometry.coordinates, project);
+  }
+  if (geometry.type === "MultiPolygon") {
+    return geometry.coordinates.map((polygon) => polygonToPath(polygon, project)).join(" ");
+  }
+  return "";
+}
+
+function centroidFromGeometry(geometry) {
+  const points = [];
+  const visit = (coordinates) => {
+    if (typeof coordinates?.[0] === "number") {
+      points.push(coordinates);
+      return;
+    }
+    coordinates?.forEach?.(visit);
+  };
+  visit(geometry?.coordinates);
+  if (!points.length) {
+    return null;
+  }
+  const [sumLon, sumLat] = points.reduce(
+    (accumulator, [lon, lat]) => [accumulator[0] + lon, accumulator[1] + lat],
+    [0, 0]
+  );
+  return [sumLon / points.length, sumLat / points.length];
+}
+
+function renderMapGrid() {
+  const verticals = 6;
+  const horizontals = 5;
+  let markup = "";
+  for (let index = 1; index < verticals; index += 1) {
+    const x = (MAP_VIEWBOX.width / verticals) * index;
+    markup += `<line x1="${x}" y1="0" x2="${x}" y2="${MAP_VIEWBOX.height}"></line>`;
+  }
+  for (let index = 1; index < horizontals; index += 1) {
+    const y = (MAP_VIEWBOX.height / horizontals) * index;
+    markup += `<line x1="0" y1="${y}" x2="${MAP_VIEWBOX.width}" y2="${y}"></line>`;
+  }
+  elements.mapGrid.innerHTML = markup;
+}
+
+function updateMapInspector(run, districtName = null) {
+  const activeDistrict = districtName || state.selectedDistrict || run?.top_risk_districts?.[0] || null;
+  const details = activeDistrict ? run?.district_scores?.[activeDistrict] : null;
+  state.selectedDistrict = activeDistrict;
+
+  if (!run) {
+    elements.mapInspectorPill.className = "alert-pill neutral";
+    elements.mapInspectorPill.textContent = "No run";
+    elements.mapInspectorName.textContent = "Hong Kong";
+    elements.mapInspectorCopy.textContent =
+      "Load a live assessment to color the real district boundaries and inspect each district.";
+    elements.mapInspectorScore.textContent = "--";
+    elements.mapInspectorDriver.textContent = "--";
+    elements.mapInspectorConfidence.textContent = "--";
+    return;
+  }
+
+  const alertClass = details ? alertClassMap[run.alert_level] ?? "neutral" : "neutral";
+  elements.mapInspectorPill.className = `alert-pill ${alertClass}`;
+  elements.mapInspectorPill.textContent = details ? `${run.alert_level} focus` : run.alert_level;
+  elements.mapInspectorName.textContent = activeDistrict || "Hong Kong";
+  elements.mapInspectorCopy.textContent = details
+    ? `${activeDistrict} is scored ${details.score.toFixed(1)} out of 10. ${details.primary_driver} is the dominant flood driver with ${details.confidence} confidence.`
+    : "The map is loaded, but no district-level run data is currently active.";
+  elements.mapInspectorScore.textContent = details ? `${details.score.toFixed(1)} / 10` : "--";
+  elements.mapInspectorDriver.textContent = details?.primary_driver ?? "--";
+  elements.mapInspectorConfidence.textContent = details?.confidence ?? "--";
+
+  Array.from(elements.mapDistricts.querySelectorAll(".district-shape")).forEach((node) => {
+    node.classList.toggle("selected", node.dataset.district === activeDistrict);
+  });
+}
+
+function renderGeoDistrictMap() {
+  if (!state.geojson?.features?.length) {
+    elements.mapDistricts.innerHTML = "";
+    return;
+  }
+
+  renderMapGrid();
+  const features = state.geojson.features.filter((feature) => feature?.properties?.District);
+  const project = projectFactory(features);
+  const fragment = document.createDocumentFragment();
+
+  for (const feature of features) {
+    const district = feature.properties.District;
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("class", "district-shape risk-low");
+    group.dataset.district = district;
+    group.setAttribute("tabindex", "0");
+
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", geometryToPath(feature.geometry, project));
+    group.appendChild(path);
+
+    const centroid = centroidFromGeometry(feature.geometry);
+    if (centroid) {
+      const [x, y] = project(centroid);
+      const text = document.createElementNS(SVG_NS, "text");
+      text.setAttribute("x", String(x));
+      text.setAttribute("y", String(y));
+      text.setAttribute("class", "district-label");
+      text.textContent = district;
+      group.appendChild(text);
+    }
+
+    fragment.appendChild(group);
+  }
+
+  elements.mapDistricts.innerHTML = "";
+  elements.mapDistricts.appendChild(fragment);
+
+  const handleFocus = (event) => {
+    const group = event.target.closest(".district-shape");
+    if (!group) {
+      return;
+    }
+    updateMapInspector(state.currentRun, group.dataset.district);
+  };
+
+  elements.mapDistricts.addEventListener("pointerover", handleFocus);
+  elements.mapDistricts.addEventListener("focusin", handleFocus);
+  elements.mapDistricts.addEventListener("click", handleFocus);
+}
+
+function renderMap(run) {
+  const districtScores = run?.district_scores ?? {};
+  Array.from(elements.mapDistricts.querySelectorAll(".district-shape")).forEach((node) => {
+    const district = node.dataset.district;
+    const score = districtScores[district]?.score ?? 0;
+    node.classList.remove("risk-low", "risk-medium", "risk-high", "risk-extreme", "top-risk");
+    node.classList.add(riskBand(score));
+    if (run?.top_risk_districts?.includes(district)) {
+      node.classList.add("top-risk");
+    }
+  });
+  updateMapInspector(run);
+}
+
 function renderRun(run) {
   state.currentRun = run;
   const alertLevel = run?.alert_level ?? "UNKNOWN";
@@ -210,6 +432,7 @@ function renderRun(run) {
   renderActions(run);
   renderAgents(run);
   renderFlags(run);
+  renderMap(run);
 }
 
 async function fetchJson(url, options) {
@@ -218,6 +441,13 @@ async function fetchJson(url, options) {
     throw new Error(`Request failed with status ${response.status}`);
   }
   return response.json();
+}
+
+async function loadGeojson() {
+  const payload = await fetchJson("/data/hksar_18_district_boundary.json");
+  state.geojson = payload;
+  renderGeoDistrictMap();
+  renderMap(state.currentRun);
 }
 
 async function loadHistory() {
@@ -284,6 +514,7 @@ function bindEvents() {
 async function bootstrap() {
   bindEvents();
   try {
+    await loadGeojson();
     await loadHistory();
     await loadLatestRun();
   } catch (error) {

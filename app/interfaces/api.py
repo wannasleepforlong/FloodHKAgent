@@ -17,6 +17,7 @@ settings = get_settings()
 orchestrator = FloodSwarmOrchestrator(settings=settings)
 run_history = RunHistoryService(settings.log_dir)
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+data_dir = Path(__file__).resolve().parent.parent.parent / "data"
 
 
 @asynccontextmanager
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="HK Flood Swarm MVP", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+app.mount("/data", StaticFiles(directory=data_dir), name="data")
 
 
 @app.get("/", response_class=FileResponse)

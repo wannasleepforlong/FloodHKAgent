@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.config.data import ALL_DISTRICTS, DISTRICT_STATION_MAP
@@ -16,6 +16,14 @@ def parse_iso8601(value: str | None) -> datetime:
         return utc_now()
     normalized = value.replace("Z", "+00:00")
     return datetime.fromisoformat(normalized)
+
+
+def add_minutes(value: datetime, minutes: int) -> datetime:
+    return value + timedelta(minutes=minutes)
+
+
+def abs_minutes_between(left: datetime, right: datetime) -> float:
+    return abs((left - right).total_seconds()) / 60.0
 
 
 def season_for_month(month: int) -> str:

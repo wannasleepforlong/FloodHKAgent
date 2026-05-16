@@ -133,6 +133,35 @@ class SystemHealth(StrictModel):
     degraded_confidence: bool = False
 
 
+class PredictionWindow(StrictModel):
+    predicted_at: datetime
+    target_time: datetime
+    target_horizon_minutes: int = Field(ge=1)
+    matching_tolerance_minutes: int = Field(ge=0)
+    predicted_overall_risk_score: float = Field(ge=0, le=10)
+    predicted_alert_level: AlertLevel
+    predicted_confidence: float = Field(ge=0.0, le=1.0)
+    prediction_reasoning_summary: str | None = None
+
+
+class PredictionValidation(StrictModel):
+    matched_run_id: str
+    matched_predicted_at: datetime
+    actual_generated_at: datetime
+    target_time: datetime
+    time_delta_minutes: float = Field(ge=0.0)
+    risk_score_error: float
+    abs_risk_score_error: float = Field(ge=0.0)
+    alert_level_match: bool
+    within_tolerance: bool
+
+
+class LearningSummary(StrictModel):
+    source: str
+    summary_text: str
+    recent_validation_count: int = Field(ge=0)
+
+
 class FloodAlertOutput(StrictModel):
     run_id: str = Field(default_factory=lambda: str(uuid4()))
     generated_at: datetime
@@ -151,6 +180,8 @@ class FloodAlertOutput(StrictModel):
     reasoning: str
     next_update_priority: UpdatePriority
     system_health: SystemHealth
+    prediction_window: PredictionWindow | None = None
+    validation: PredictionValidation | None = None
 
 
 class RunAlertRequest(StrictModel):

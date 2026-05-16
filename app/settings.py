@@ -60,6 +60,12 @@ class Settings:
     agent_retry_timeout_seconds: float
     peer_query_timeout_seconds: float
     log_dir: Path
+    prediction_horizon_minutes: int
+    prediction_matching_tolerance_minutes: int
+    letta_learning_enabled: bool
+    letta_api_key: str | None
+    letta_base_url: str | None
+    letta_agent_id: str | None
 
 
 def get_settings() -> Settings:
@@ -100,4 +106,14 @@ def get_settings() -> Settings:
             os.getenv("FLOOD_SWARM_PEER_QUERY_TIMEOUT_SECONDS", "8")
         ),
         log_dir=log_dir,
+        prediction_horizon_minutes=int(
+            os.getenv("FLOOD_SWARM_PREDICTION_HORIZON_MINUTES", "180")
+        ),
+        prediction_matching_tolerance_minutes=int(
+            os.getenv("FLOOD_SWARM_MATCH_TOLERANCE_MINUTES", "5")
+        ),
+        letta_learning_enabled=_env_flag("FLOOD_SWARM_LETTA_LEARNING_ENABLED", default=True),
+        letta_api_key=os.getenv("LETTA_API_KEY"),
+        letta_base_url=os.getenv("LETTA_BASE_URL"),
+        letta_agent_id=os.getenv("FLOOD_SWARM_LETTA_AGENT_ID"),
     )

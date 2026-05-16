@@ -26,6 +26,8 @@ from app.models.schemas import (
 )
 from app.services.llm import LLMRuntime
 from app.services.logger import RunLogger
+from app.services.prediction_learning import PredictionLearningService
+from app.services.run_history import RunHistoryService
 from app.services.utils import all_district_scores, season_for_month, utc_now
 from app.settings import Settings
 
@@ -43,6 +45,11 @@ class FloodSwarmOrchestrator:
         self.hko_client = hko_client or HKOClient(settings)
         self.llm = llm or LLMRuntime(settings)
         self.logger = logger or RunLogger(settings.log_dir)
+        self.run_history = RunHistoryService(settings.log_dir)
+        self.learning = PredictionLearningService(
+            settings=settings,
+            run_history=self.run_history,
+        )
         self.signal_cache: dict[str, AgentSignal] = {}
         self._agents = self._build_agents()
         self._compound_detector = CompoundDetector(self.llm, settings)
@@ -90,11 +97,13 @@ class FloodSwarmOrchestrator:
                     reasoning=COMPOUND_RULES["DEGRADED_CONFIDENCE"],
                 )
             )
+        learning_summary = await self.learning.get_learning_summary()
         synthesis = await self._synthesis_agent.analyze(
             signals=specialist_signals,
             compound_flags=compound_flags,
             month=utc_now().month,
             season=season_for_month(utc_now().month),
+            learning_summary=learning_summary.summary_text if learning_summary is not None else None,
         )
         output = self._build_output(
             synthesis=synthesis,
@@ -103,6 +112,7 @@ class FloodSwarmOrchestrator:
             stale_signals=stale_signals,
             degraded_confidence=degraded_confidence,
         )
+        await self.learning.finalize_run(output)
         self.logger.write(output)
         return output
 
