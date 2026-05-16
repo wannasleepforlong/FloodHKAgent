@@ -409,6 +409,11 @@ select {
   gap: 0.75rem;
 }
 
+.accuracy-item {
+  display: grid;
+  gap: 0.9rem;
+}
+
 .learning-copy {
   margin: 0;
   line-height: 1.7;
@@ -425,6 +430,42 @@ select {
   padding: 0.5rem 0.75rem;
   border-radius: 0.9rem;
   background: rgba(124, 224, 255, 0.08);
+}
+
+.accuracy-chart {
+  width: 100%;
+  height: auto;
+  min-height: 12rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.35rem;
+}
+
+.accuracy-axis,
+.accuracy-gridline {
+  stroke: rgba(181, 222, 255, 0.18);
+  stroke-width: 1;
+}
+
+.accuracy-line {
+  fill: none;
+  stroke: var(--cool);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.accuracy-dots circle {
+  fill: var(--warm);
+  stroke: rgba(7, 19, 31, 0.95);
+  stroke-width: 2;
+}
+
+.accuracy-label {
+  fill: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
 }
 
 .agents-grid {

@@ -54,6 +54,11 @@ async def recent_runs() -> dict[str, list[dict[str, object]]]:
     return {"runs": run_history.list_recent_runs()}
 
 
+@app.get("/api/learning/accuracy")
+async def learning_accuracy() -> dict[str, object]:
+    return run_history.build_accuracy_report()
+
+
 @app.get("/api/runs/{run_id}", response_model=FloodAlertOutput)
 async def get_run(run_id: str) -> FloodAlertOutput:
     try:

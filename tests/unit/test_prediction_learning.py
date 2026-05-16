@@ -253,3 +253,32 @@ def test_prediction_learning_prefers_local_summary_when_letta_disabled(tmp_path,
     summary = __import__("asyncio").run(service.get_learning_summary())
     assert summary is not None
     assert summary.source == "local"
+
+
+def test_run_history_builds_accuracy_report(tmp_path):
+    history = RunHistoryService(tmp_path)
+    validated = _make_run(
+        run_id="validated",
+        generated_at=datetime(2026, 5, 16, 12, 15, tzinfo=UTC),
+        score=6.0,
+        alert_level=AlertLevel.AMBER,
+        target_time=datetime(2026, 5, 16, 13, 15, tzinfo=UTC),
+    )
+    validated.validation = PredictionValidation(
+        matched_run_id="prior",
+        matched_predicted_at=datetime(2026, 5, 16, 11, 15, tzinfo=UTC),
+        actual_generated_at=validated.generated_at,
+        target_time=validated.generated_at,
+        time_delta_minutes=0.0,
+        risk_score_error=1.0,
+        abs_risk_score_error=1.0,
+        alert_level_match=True,
+        within_tolerance=True,
+    )
+    (tmp_path / "validated.json").write_text(validated.model_dump_json(indent=2), encoding="utf-8")
+
+    report = history.build_accuracy_report()
+    assert report["point_count"] == 1
+    assert report["rolling_accuracy_percent"] == 93.0
+    assert report["points"][0]["risk_accuracy_percent"] == 90.0
+    assert report["points"][0]["alert_accuracy_percent"] == 100.0

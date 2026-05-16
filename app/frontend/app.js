@@ -1,6 +1,7 @@
 const state = {
   currentRun: null,
   history: [],
+  accuracy: null,
   geojson: null,
   selectedDistrict: null,
   lastLoadedAt: null,
@@ -20,6 +21,7 @@ const elements = {
   narrativeEn: document.querySelector("#narrative-en"),
   narrativeTc: document.querySelector("#narrative-tc"),
   learningPanel: document.querySelector("#learning-panel"),
+  accuracyPanel: document.querySelector("#accuracy-panel"),
   districtList: document.querySelector("#district-list"),
   actionsList: document.querySelector("#actions-list"),
   agentsGrid: document.querySelector("#agents-grid"),
@@ -125,6 +127,73 @@ function renderLearning(run) {
       </div>
       <p class="learning-copy">${escapeHtml(summaryText)}</p>
       ${metrics}
+    </article>
+  `;
+}
+
+function buildAccuracyChart(points) {
+  const width = 560;
+  const height = 220;
+  const padding = 22;
+  const usableWidth = width - padding * 2;
+  const usableHeight = height - padding * 2;
+  const series = points.map((point, index) => {
+    const x =
+      points.length === 1 ? width / 2 : padding + (usableWidth * index) / Math.max(points.length - 1, 1);
+    const y = padding + ((100 - point.accuracy_percent) / 100) * usableHeight;
+    return { ...point, x: Number(x.toFixed(2)), y: Number(y.toFixed(2)) };
+  });
+  const polyline = series.map((point) => `${point.x},${point.y}`).join(" ");
+  const dots = series
+    .map(
+      (point) => `
+        <circle cx="${point.x}" cy="${point.y}" r="4.5"></circle>
+      `
+    )
+    .join("");
+  return `
+    <svg class="accuracy-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Prediction accuracy over time">
+      <line class="accuracy-axis" x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}"></line>
+      <line class="accuracy-axis" x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}"></line>
+      <line class="accuracy-gridline" x1="${padding}" y1="${padding}" x2="${width - padding}" y2="${padding}"></line>
+      <line class="accuracy-gridline" x1="${padding}" y1="${padding + usableHeight / 2}" x2="${width - padding}" y2="${padding + usableHeight / 2}"></line>
+      <polyline class="accuracy-line" points="${polyline}"></polyline>
+      <g class="accuracy-dots">${dots}</g>
+      <text class="accuracy-label" x="${padding}" y="${padding - 6}">100%</text>
+      <text class="accuracy-label" x="${padding}" y="${padding + usableHeight / 2 - 6}">50%</text>
+      <text class="accuracy-label" x="${padding}" y="${height - 6}">0%</text>
+    </svg>
+  `;
+}
+
+function renderAccuracy() {
+  const report = state.accuracy;
+  const points = report?.points ?? [];
+  if (!points.length) {
+    elements.accuracyPanel.className = "stack-list empty-state";
+    elements.accuracyPanel.textContent =
+      "Accuracy will appear after validated predictions are available.";
+    return;
+  }
+
+  const latest = points[points.length - 1];
+  const chartMarkup = buildAccuracyChart(points);
+  const latestTime = formatTimestamp(latest.actual_generated_at);
+  elements.accuracyPanel.className = "stack-list";
+  elements.accuracyPanel.innerHTML = `
+    <article class="action-item accuracy-item">
+      <div class="district-top">
+        <strong>Rolling prediction accuracy</strong>
+        <span class="mini-pill">${escapeHtml(`${report.rolling_accuracy_percent.toFixed(1)}%`)}</span>
+      </div>
+      <p class="learning-copy">${escapeHtml(report.formula)}</p>
+      <div class="learning-metrics">
+        <span class="learning-metric"><span class="mini-label">Validated points</span> ${escapeHtml(report.point_count)}</span>
+        <span class="learning-metric"><span class="mini-label">Horizon</span> ${escapeHtml(`${latest.target_horizon_minutes} min`)}</span>
+        <span class="learning-metric"><span class="mini-label">Latest score</span> ${escapeHtml(`${latest.accuracy_percent.toFixed(1)}%`)}</span>
+        <span class="learning-metric"><span class="mini-label">Latest validated</span> ${escapeHtml(latestTime)}</span>
+      </div>
+      ${chartMarkup}
     </article>
   `;
 }
@@ -508,6 +577,12 @@ async function loadHistory() {
   renderHistory();
 }
 
+async function loadAccuracy() {
+  const payload = await fetchJson("/api/learning/accuracy");
+  state.accuracy = payload;
+  renderAccuracy();
+}
+
 async function loadRun(runId) {
   const run = await fetchJson(`/api/runs/${encodeURIComponent(runId)}`);
   renderRun(run);
@@ -539,6 +614,7 @@ async function triggerLiveRun() {
     });
     renderRun(run);
     await loadHistory();
+    await loadAccuracy();
     const horizonMinutes = run?.prediction_window?.target_horizon_minutes;
     const scheduleText =
       typeof horizonMinutes === "number"
@@ -573,6 +649,7 @@ async function bootstrap() {
   try {
     await loadGeojson();
     await loadHistory();
+    await loadAccuracy();
     await loadLatestRun();
   } catch (error) {
     setStatus(`Dashboard loaded, but data is unavailable. ${error.message}`, true);
