@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
+
+from app.models.schemas import (
+    AlertLevel,
+    DistrictScore,
+    FloodAlertOutput,
+    PredictionWindow,
+    RecommendedAction,
+    SystemHealth,
+    UpdatePriority,
+)
+from app.services.prediction_learning import PredictionLearningService
+from app.services.run_history import RunHistoryService
+from app.settings import get_settings
+
+
+def _make_run(
+    *,
+    run_id: str,
+    generated_at: datetime,
+    score: float,
+    alert_level: AlertLevel,
+    target_time: datetime | None = None,
+):
+    output = FloodAlertOutput(
+        run_id=run_id,
+        generated_at=generated_at,
+        alert_level=alert_level,
+        overall_risk_score=score,
+        district_scores={
+            "Tuen Mun": DistrictScore(score=score, confidence="HIGH", primary_driver="SynthesisAgent")
+        },
+        compound_flags=[],
+        top_risk_districts=["Tuen Mun"],
+        narrative_en="Testing narrative.",
+        narrative_tc="Testing narrative.",
+        recommended_actions=[RecommendedAction(code="MONITOR", description="Monitor closely.")],
+        confidence_overall=0.8,
+        agent_signals=[],
+        compound_detector_output=[],
+        data_freshness=generated_at,
+        reasoning="Testing reasoning.",
+        next_update_priority=UpdatePriority.ROUTINE,
+        system_health=SystemHealth(agents_healthy=5),
+        prediction_window=(
+            PredictionWindow(
+                predicted_at=generated_at,
+                target_time=target_time,
+                target_horizon_minutes=180,
+                matching_tolerance_minutes=5,
+                predicted_overall_risk_score=score,
+                predicted_alert_level=alert_level,
+                predicted_confidence=0.8,
+                prediction_reasoning_summary="Testing reasoning.",
+            )
+            if target_time is not None
+            else None
+        ),
+    )
+    return output
+
+
+def test_run_history_finds_closest_prediction_match(tmp_path):
+    history = RunHistoryService(tmp_path)
+    actual_time = datetime(2026, 5, 16, 12, 0, tzinfo=UTC)
+    farther = _make_run(
+        run_id="farther",
+        generated_at=actual_time - timedelta(hours=3, minutes=2),
+        score=4.0,
+        alert_level=AlertLevel.YELLOW,
+        target_time=actual_time - timedelta(minutes=2),
+    )
+    closer = _make_run(
+        run_id="closer",
+        generated_at=actual_time - timedelta(hours=3, minutes=1),
+        score=5.0,
+        alert_level=AlertLevel.AMBER,
+        target_time=actual_time + timedelta(minutes=1),
+    )
+    for run in (farther, closer):
+        (tmp_path / f"{run.run_id}.json").write_text(run.model_dump_json(indent=2), encoding="utf-8")
+
+    matched = history.find_prediction_match(actual_time=actual_time, tolerance_minutes=5)
+    assert matched is not None
+    assert matched.run_id == "closer"
+
+
+def test_prediction_learning_builds_validation_and_summary(tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOOD_SWARM_PREDICTION_HORIZON_MINUTES", "180")
+    monkeypatch.setenv("FLOOD_SWARM_MATCH_TOLERANCE_MINUTES", "5")
+    settings = get_settings()
+    history = RunHistoryService(tmp_path)
+    service = PredictionLearningService(settings=settings, run_history=history)
+
+    prior_generated_at = datetime(2026, 5, 16, 9, 0, tzinfo=UTC)
+    prior = _make_run(
+        run_id="prior",
+        generated_at=prior_generated_at,
+        score=4.5,
+        alert_level=AlertLevel.YELLOW,
+        target_time=datetime(2026, 5, 16, 12, 2, tzinfo=UTC),
+    )
+    (tmp_path / "prior.json").write_text(prior.model_dump_json(indent=2), encoding="utf-8")
+
+    current = _make_run(
+        run_id="current",
+        generated_at=datetime(2026, 5, 16, 12, 0, tzinfo=UTC),
+        score=6.0,
+        alert_level=AlertLevel.AMBER,
+    )
+
+    outcome = __import__("asyncio").run(service.finalize_run(current))
+    assert outcome.validation is not None
+    assert outcome.validation.matched_run_id == "prior"
+    assert outcome.validation.within_tolerance is True
+    assert outcome.validation.risk_score_error == 1.5
+    assert outcome.learning_summary is not None
+    assert outcome.learning_summary.recent_validation_count == 1
+    assert "Mean signed error" in outcome.learning_summary.summary_text
