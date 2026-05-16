@@ -5,6 +5,7 @@ const state = {
   geojson: null,
   selectedDistrict: null,
   lastLoadedAt: null,
+  mapMode: "actual", // "actual" | "predicted" | "rainfall"
 };
 
 const elements = {
@@ -29,12 +30,26 @@ const elements = {
   historyList: document.querySelector("#history-list"),
   mapDistricts: document.querySelector("#hk-map-districts"),
   mapGrid: document.querySelector("#hk-map-grid"),
+  mapLabels: document.querySelector("#hk-map-labels"),
+  mapCompass: document.querySelector("#hk-map-compass"),
+  mapDataTime: document.querySelector("#map-data-time"),
+  mapPredWindow: document.querySelector("#map-pred-window"),
   mapInspectorPill: document.querySelector("#map-inspector-pill"),
   mapInspectorName: document.querySelector("#map-inspector-name"),
   mapInspectorCopy: document.querySelector("#map-inspector-copy"),
-  mapInspectorScore: document.querySelector("#map-inspector-score"),
   mapInspectorDriver: document.querySelector("#map-inspector-driver"),
   mapInspectorConfidence: document.querySelector("#map-inspector-confidence"),
+  scoreRingVal: document.querySelector("#score-ring-val"),
+  scoreRingText: document.querySelector("#score-ring-text"),
+  // New map controls
+  mapTabBar: document.querySelector(".map-tab-bar"),
+  mapTabHint: document.querySelector("#map-tab-hint"),
+  dualBarActual: document.querySelector("#dual-bar-actual"),
+  dualBarPred: document.querySelector("#dual-bar-pred"),
+  dualValActual: document.querySelector("#dual-val-actual"),
+  dualValPred: document.querySelector("#dual-val-pred"),
+  inspectorRainfall: document.querySelector("#map-inspector-rainfall"),
+  inspectorTide: document.querySelector("#map-inspector-tide"),
 };
 
 const alertClassMap = {
@@ -321,18 +336,50 @@ function renderHistory() {
     .join("");
 }
 
-function riskBand(score) {
-  if (score >= 8) {
-    return "risk-extreme";
+/**
+ * Interpolate a continuous colour for a risk score 0–10.
+ * Palette: deep-blue(0) → teal-green(3) → amber(5) → orange(7) → crimson(10)
+ */
+function riskColour(score, alpha = 1) {
+  const stops = [
+    { s: 0,  r: 30,  g: 74,  b: 107 }, // deep navy
+    { s: 3,  r: 38,  g: 138, b: 78  }, // teal-green
+    { s: 5,  r: 217, g: 184, b: 58  }, // amber-yellow
+    { s: 7,  r: 232, g: 114, b: 42  }, // orange
+    { s: 10, r: 217, g: 43,  b: 28  }, // crimson
+  ];
+  const clamped = Math.max(0, Math.min(10, score));
+  let lo = stops[0];
+  let hi = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (clamped >= stops[i].s && clamped <= stops[i + 1].s) {
+      lo = stops[i];
+      hi = stops[i + 1];
+      break;
+    }
   }
-  if (score >= 6) {
-    return "risk-high";
-  }
-  if (score >= 3) {
-    return "risk-medium";
-  }
-  return "risk-low";
+  const t = lo.s === hi.s ? 0 : (clamped - lo.s) / (hi.s - lo.s);
+  const r = Math.round(lo.r + t * (hi.r - lo.r));
+  const g = Math.round(lo.g + t * (hi.g - lo.g));
+  const b = Math.round(lo.b + t * (hi.b - lo.b));
+  return alpha < 1 ? `rgba(${r},${g},${b},${alpha})` : `rgb(${r},${g},${b})`;
 }
+
+/** Rain colour: 0 mm → slate-blue, >30 mm → vivid cyan-green */
+function rainfallColour(mmPerHour) {
+  const mm = Math.max(0, mmPerHour || 0);
+  if (mm === 0) return "rgb(22,44,68)";
+  if (mm < 10) return `rgb(${Math.round(22 + mm * 3)},${Math.round(44 + mm * 8)},${Math.round(68 + mm * 4)})`;
+  if (mm < 30) return `rgb(${Math.round(52 + (mm - 10) * 2)},${Math.round(124 + (mm - 10) * 4)},${Math.round(108)})`;
+  if (mm < 50) return `rgb(57,211,140)`;
+  return `rgb(255,230,50)`; // extreme flash yellow
+}
+
+/** Ring stroke colour matching risk */
+function ringColour(score) {
+  return riskColour(score);
+}
+
 
 function projectFactory(features) {
   let minLon = Infinity;
@@ -431,10 +478,32 @@ function renderMapGrid() {
   elements.mapGrid.innerHTML = markup;
 }
 
+function renderCompass() {
+  const cx = 910;
+  const cy = 670;
+  const r = 36;
+  elements.mapCompass.innerHTML = `
+    <circle cx="${cx}" cy="${cy}" r="${r}" class="compass-ring-outer" />
+    <circle cx="${cx}" cy="${cy}" r="${r - 4}" class="compass-ring-inner" />
+    <polygon class="compass-needle-n" points="${cx},${cy - r + 6} ${cx - 5},${cy + 4} ${cx + 5},${cy + 4}" />
+    <polygon class="compass-needle-s" points="${cx},${cy + r - 6} ${cx - 5},${cy - 4} ${cx + 5},${cy - 4}" />
+    <polygon class="compass-needle-e" points="${cx + r - 6},${cy} ${cx - 4},${cy - 5} ${cx - 4},${cy + 5}" />
+    <polygon class="compass-needle-w" points="${cx - r + 6},${cy} ${cx + 4},${cy - 5} ${cx + 4},${cy + 5}" />
+    <text x="${cx}" y="${cy - r + 6}" class="compass-label-n" text-anchor="middle" dy="-2">N</text>
+    <text x="${cx}" y="${cy + r - 4}" class="compass-label-s" text-anchor="middle" dy="5">S</text>
+    <text x="${cx + r - 6}" y="${cy + 4}" class="compass-label-e" text-anchor="middle">E</text>
+    <text x="${cx - r + 6}" y="${cy + 4}" class="compass-label-w" text-anchor="middle">W</text>
+  `;
+}
+
 function updateMapInspector(run, districtName = null) {
   const activeDistrict = districtName || state.selectedDistrict || run?.top_risk_districts?.[0] || null;
   const details = activeDistrict ? run?.district_scores?.[activeDistrict] : null;
   state.selectedDistrict = activeDistrict;
+
+  const scoreRing = elements.scoreRingVal;
+  const scoreText = elements.scoreRingText;
+  const total = 182.21;
 
   if (!run) {
     elements.mapInspectorPill.className = "alert-pill neutral";
@@ -442,27 +511,79 @@ function updateMapInspector(run, districtName = null) {
     elements.mapInspectorName.textContent = "Hong Kong";
     elements.mapInspectorCopy.textContent =
       "Load a live assessment to color the real district boundaries and inspect each district.";
-    elements.mapInspectorScore.textContent = "--";
     elements.mapInspectorDriver.textContent = "--";
     elements.mapInspectorConfidence.textContent = "--";
+    scoreRing.setAttribute("stroke-dasharray", "0 " + total);
+    scoreRing.setAttribute("stroke", "#93abc0");
+    scoreText.textContent = "--";
+    elements.mapDataTime.textContent = "Real-time data";
+    elements.mapPredWindow.textContent = "";
+    // Dual bars
+    elements.dualBarActual.style.width = "0%";
+    elements.dualBarPred.style.width = "0%";
+    elements.dualValActual.textContent = "--";
+    elements.dualValPred.textContent = "--";
+    if (elements.inspectorRainfall) elements.inspectorRainfall.textContent = "--";
+    if (elements.inspectorTide) elements.inspectorTide.textContent = "--";
     return;
   }
 
   const alertClass = details ? alertClassMap[run.alert_level] ?? "neutral" : "neutral";
   elements.mapInspectorPill.className = `alert-pill ${alertClass}`;
-  elements.mapInspectorPill.textContent = details ? `${run.alert_level} focus` : run.alert_level;
+  elements.mapInspectorPill.textContent = details ? `${run.alert_level} alert` : run.alert_level;
   elements.mapInspectorName.textContent = activeDistrict || "Hong Kong";
   elements.mapInspectorCopy.textContent = details
-    ? `${activeDistrict} is scored ${details.score.toFixed(1)} out of 10. ${details.primary_driver} is the dominant flood driver with ${details.confidence} confidence.`
-    : "The map is loaded, but no district-level run data is currently active.";
-  elements.mapInspectorScore.textContent = details ? `${details.score.toFixed(1)} / 10` : "--";
-  elements.mapInspectorDriver.textContent = details?.primary_driver ?? "--";
+    ? `${activeDistrict}: scored ${details.score.toFixed(1)}/10. ${details.primary_driver?.split(" ").slice(0, 10).join(" ") ?? ""}…`
+    : "No district-level data for the selected district.";
+  elements.mapInspectorDriver.textContent = details?.primary_driver?.split(" ").slice(0, 4).join(" ") ?? "--";
   elements.mapInspectorConfidence.textContent = details?.confidence ?? "--";
+
+  // Score ring — reflects current map mode
+  const actualScore = details?.score ?? 0;
+  const predScore = run?.prediction_window?.predicted_overall_risk_score ?? actualScore;
+  const displayScore = state.mapMode === "predicted" ? predScore : actualScore;
+  const pct = Math.min(displayScore / 10, 1);
+  const filled = total * pct;
+  scoreRing.setAttribute("stroke-dasharray", filled.toFixed(2) + " " + total);
+  scoreRing.setAttribute("stroke", ringColour(displayScore));
+  scoreText.textContent = details ? displayScore.toFixed(1) : "--";
+
+  // Dual bars
+  elements.dualBarActual.style.width = `${(actualScore / 10) * 100}%`;
+  elements.dualValActual.textContent = details ? actualScore.toFixed(1) : "--";
+  elements.dualBarPred.style.width = `${(predScore / 10) * 100}%`;
+  elements.dualValPred.textContent = run.prediction_window ? predScore.toFixed(1) : "n/a";
+
+  // Agent signal readouts
+  const rainfallAgent = run.agent_signals?.find(s => s.agent_id === "RainfallAgent");
+  const tideAgent = run.agent_signals?.find(s => s.agent_id === "TideAgent");
+  const rainfallScore = activeDistrict && rainfallAgent?.district_scores?.[activeDistrict];
+  const tideScore = activeDistrict && tideAgent?.district_scores?.[activeDistrict];
+  if (elements.inspectorRainfall) {
+    elements.inspectorRainfall.textContent =
+      typeof rainfallScore === "number" ? rainfallScore.toFixed(1) : "--";
+  }
+  if (elements.inspectorTide) {
+    elements.inspectorTide.textContent =
+      typeof tideScore === "number" ? tideScore.toFixed(1) : "--";
+  }
+
+  // Timestamps
+  const genAt = formatTimestamp(run?.generated_at);
+  elements.mapDataTime.textContent = `Data: ${genAt}`;
+  const pw = run?.prediction_window;
+  if (pw) {
+    elements.mapPredWindow.textContent =
+      `Pred: +${pw.target_horizon_minutes ?? "?"}min · ${pw.predicted_alert_level} · ${pw.predicted_overall_risk_score?.toFixed(1)}`;
+  } else {
+    elements.mapPredWindow.textContent = "No prediction window";
+  }
 
   Array.from(elements.mapDistricts.querySelectorAll(".district-shape")).forEach((node) => {
     node.classList.toggle("selected", node.dataset.district === activeDistrict);
   });
 }
+
 
 function renderGeoDistrictMap() {
   if (!state.geojson?.features?.length) {
@@ -471,9 +592,11 @@ function renderGeoDistrictMap() {
   }
 
   renderMapGrid();
+  renderCompass();
   const features = state.geojson.features.filter((feature) => feature?.properties?.District);
   const project = projectFactory(features);
-  const fragment = document.createDocumentFragment();
+  const districtsFrag = document.createDocumentFragment();
+  const labelsFrag = document.createDocumentFragment();
 
   for (const feature of features) {
     const district = feature.properties.District;
@@ -493,22 +616,30 @@ function renderGeoDistrictMap() {
       text.setAttribute("x", String(x));
       text.setAttribute("y", String(y));
       text.setAttribute("class", "district-label");
+      text.dataset.district = district;
       text.textContent = district;
-      group.appendChild(text);
+      labelsFrag.appendChild(text);
     }
 
-    fragment.appendChild(group);
+    districtsFrag.appendChild(group);
   }
 
   elements.mapDistricts.innerHTML = "";
-  elements.mapDistricts.appendChild(fragment);
+  elements.mapDistricts.appendChild(districtsFrag);
+  elements.mapLabels.innerHTML = "";
+  elements.mapLabels.appendChild(labelsFrag);
 
   const handleFocus = (event) => {
     const group = event.target.closest(".district-shape");
     if (!group) {
       return;
     }
-    updateMapInspector(state.currentRun, group.dataset.district);
+    const district = group.dataset.district;
+    updateMapInspector(state.currentRun, district);
+
+    elements.mapLabels.querySelectorAll(".district-label").forEach((lbl) => {
+      lbl.classList.toggle("label-active", lbl.dataset.district === district);
+    });
   };
 
   elements.mapDistricts.addEventListener("pointerover", handleFocus);
@@ -516,19 +647,53 @@ function renderGeoDistrictMap() {
   elements.mapDistricts.addEventListener("click", handleFocus);
 }
 
+/**
+ * Apply fill colours to all district shapes based on the current map mode:
+ *  - "actual"    : district_scores[d].score (continuous colour scale)
+ *  - "predicted" : prediction_window.predicted_overall_risk_score (uniform tint)
+ *                  + per-district actual as base when no per-district prediction
+ *  - "rainfall"  : RainfallAgent district_scores (blue-green scale)
+ */
 function renderMap(run) {
   const districtScores = run?.district_scores ?? {};
+  const predScore = run?.prediction_window?.predicted_overall_risk_score ?? null;
+  const rainfallAgent = run?.agent_signals?.find(s => s.agent_id === "RainfallAgent");
+  const rainfallScores = rainfallAgent?.district_scores ?? {};
+
   Array.from(elements.mapDistricts.querySelectorAll(".district-shape")).forEach((node) => {
     const district = node.dataset.district;
-    const score = districtScores[district]?.score ?? 0;
-    node.classList.remove("risk-low", "risk-medium", "risk-high", "risk-extreme", "top-risk");
-    node.classList.add(riskBand(score));
-    if (run?.top_risk_districts?.includes(district)) {
-      node.classList.add("top-risk");
+    const path = node.querySelector("path");
+    if (!path) return;
+
+    // Remove old mode classes
+    node.classList.remove("top-risk", "mode-predicted", "mode-rainfall");
+
+    let fillColour;
+    if (state.mapMode === "rainfall") {
+      const mm = rainfallScores[district] ?? 0;
+      fillColour = rainfallColour(mm * 30); // scale agent score 0-10 → 0-300mm equiv
+      node.classList.add("mode-rainfall");
+    } else if (state.mapMode === "predicted") {
+      // Use per-district actual score blended toward the run-level prediction
+      const actualScore = districtScores[district]?.score ?? 0;
+      const blended = predScore !== null ? (actualScore * 0.4 + predScore * 0.6) : actualScore;
+      fillColour = riskColour(blended, 0.88);
+      node.classList.add("mode-predicted");
+    } else {
+      // Actual mode
+      const score = districtScores[district]?.score ?? 0;
+      fillColour = riskColour(score);
+      if (run?.top_risk_districts?.includes(district)) {
+        node.classList.add("top-risk");
+      }
     }
+
+    path.style.fill = fillColour;
   });
+
   updateMapInspector(run);
 }
+
 
 function renderRun(run) {
   state.currentRun = run;
@@ -642,7 +807,24 @@ function bindEvents() {
       setStatus(`Unable to load snapshot. ${error.message}`, true)
     );
   });
+
+  // Map tab bar switching
+  if (elements.mapTabBar) {
+    elements.mapTabBar.addEventListener("click", (event) => {
+      const tab = event.target.closest(".map-tab[data-mode]");
+      if (!tab) return;
+      const mode = tab.dataset.mode;
+      if (mode === state.mapMode) return;
+      state.mapMode = mode;
+      elements.mapTabBar.querySelectorAll(".map-tab").forEach((t) => {
+        t.classList.toggle("active", t.dataset.mode === mode);
+        t.setAttribute("aria-selected", t.dataset.mode === mode ? "true" : "false");
+      });
+      renderMap(state.currentRun);
+    });
+  }
 }
+
 
 async function bootstrap() {
   bindEvents();

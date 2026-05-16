@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Flood Watch HK</title>
+    <title>FloodWatch HK — Live District Risk Monitor</title>
+    <meta name="description" content="Real-time Hong Kong flood risk monitor with district-level scoring, agent signals, and predictive analytics." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -75,6 +76,162 @@
             </article>
           </div>
         </section>
+
+        <!-- ═══════════════════════════════ MAP PANEL ═══════════════════════════════ -->
+        <section class="panel panel-map">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Geo view</p>
+              <h2>Hong Kong district risk map</h2>
+            </div>
+            <div class="panel-meta">
+              <span class="timestamp" id="map-data-time">Real-time data</span>
+              <span class="timestamp" id="map-pred-window"></span>
+            </div>
+          </div>
+
+          <!-- Map mode tabs -->
+          <div class="map-tab-bar" role="tablist" aria-label="Map data layer">
+            <button class="map-tab active" id="tab-actual" role="tab" aria-selected="true" data-mode="actual">
+              <span class="tab-dot dot-actual"></span>
+              Actual risk
+            </button>
+            <button class="map-tab" id="tab-predicted" role="tab" aria-selected="false" data-mode="predicted">
+              <span class="tab-dot dot-predicted"></span>
+              Predicted risk
+            </button>
+            <button class="map-tab" id="tab-rainfall" role="tab" aria-selected="false" data-mode="rainfall">
+              <span class="tab-dot dot-rainfall"></span>
+              Rainfall signal
+            </button>
+            <div class="map-tab-spacer"></div>
+            <span class="map-tab-hint" id="map-tab-hint">Click a district to inspect</span>
+          </div>
+
+          <div class="map-panel">
+            <div class="map-stage">
+              <svg
+                id="hk-risk-map"
+                class="hk-map"
+                viewBox="0 0 1000 740"
+                role="img"
+                aria-labelledby="hk-map-title hk-map-desc"
+              >
+                <title id="hk-map-title">Hong Kong district risk map</title>
+                <desc id="hk-map-desc">Real Hong Kong district boundaries colored by live flood risk score.</desc>
+                <defs>
+                  <filter id="map-glow-filter" x="-40%" y="-40%" width="180%" height="180%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                  </filter>
+                  <filter id="map-glow-intense" x="-60%" y="-60%" width="220%" height="220%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="blur" />
+                    <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                  </filter>
+                  <filter id="drop-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="rgba(0,0,0,0.5)" />
+                  </filter>
+                  <radialGradient id="map-vignette" cx="50%" cy="42%" r="74%">
+                    <stop offset="0%" stop-color="rgba(36, 201, 255, 0.10)" />
+                    <stop offset="100%" stop-color="rgba(1, 9, 15, 0)" />
+                  </radialGradient>
+                  <!-- Continuous risk color stops (used by JS) -->
+                  <linearGradient id="risk-scale-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%"   stop-color="#1e4a6b" />
+                    <stop offset="30%"  stop-color="#2d8a4e" />
+                    <stop offset="50%"  stop-color="#d9b83a" />
+                    <stop offset="70%"  stop-color="#e8722a" />
+                    <stop offset="100%" stop-color="#d92b1c" />
+                  </linearGradient>
+                </defs>
+                <rect class="map-backdrop" x="0" y="0" width="1000" height="740" />
+                <rect class="map-glow" x="0" y="0" width="1000" height="740" fill="url(#map-vignette)" />
+                <g id="hk-map-grid" class="map-grid"></g>
+                <g id="hk-map-districts" class="map-districts"></g>
+                <g id="hk-map-labels"></g>
+                <g id="hk-map-compass" class="map-compass"></g>
+              </svg>
+
+              <!-- Inspector panel -->
+              <aside class="map-inspector" id="map-inspector">
+                <div class="map-inspector-top">
+                  <span class="card-label">Selection</span>
+                  <span id="map-inspector-pill" class="alert-pill neutral">No run</span>
+                </div>
+                <h3 id="map-inspector-name">Hong Kong</h3>
+
+                <div class="map-score-ring" id="map-score-ring">
+                  <svg viewBox="0 0 64 64" class="score-ring-svg">
+                    <circle class="score-ring-bg" cx="32" cy="32" r="29" />
+                    <circle class="score-ring-val" id="score-ring-val" cx="32" cy="32" r="29" />
+                  </svg>
+                  <span class="score-ring-text" id="score-ring-text">--</span>
+                </div>
+
+                <!-- Dual actual vs predicted comparison -->
+                <div class="inspector-dual-scores" id="inspector-dual-scores">
+                  <div class="dual-score-item">
+                    <span class="dual-score-label">Actual</span>
+                    <div class="dual-score-bar-wrap">
+                      <div class="dual-score-bar" id="dual-bar-actual"></div>
+                    </div>
+                    <span class="dual-score-val" id="dual-val-actual">--</span>
+                  </div>
+                  <div class="dual-score-item">
+                    <span class="dual-score-label predicted-lbl">Predicted</span>
+                    <div class="dual-score-bar-wrap">
+                      <div class="dual-score-bar predicted-bar" id="dual-bar-pred"></div>
+                    </div>
+                    <span class="dual-score-val predicted-val" id="dual-val-pred">--</span>
+                  </div>
+                </div>
+
+                <p id="map-inspector-copy" class="map-copy">
+                  Load a live assessment to color the real district boundaries and inspect each district.
+                </p>
+                <div class="map-inspector-metrics">
+                  <article>
+                    <span class="metric-label">Driver</span>
+                    <strong id="map-inspector-driver">--</strong>
+                  </article>
+                  <article>
+                    <span class="metric-label">Confidence</span>
+                    <strong id="map-inspector-confidence">--</strong>
+                  </article>
+                </div>
+
+                <!-- Rainfall agent readout per district -->
+                <div class="inspector-agent-row" id="inspector-agent-row">
+                  <span class="metric-label">Rainfall signal</span>
+                  <strong id="map-inspector-rainfall">--</strong>
+                  <span class="metric-label" style="margin-left:0.8rem">Tide signal</span>
+                  <strong id="map-inspector-tide">--</strong>
+                </div>
+              </aside>
+            </div>
+
+            <!-- Continuous colour scale legend -->
+            <div class="map-legend-bar">
+              <span class="legend-continuous-label">0</span>
+              <div class="legend-continuous-track">
+                <div class="legend-continuous-gradient"></div>
+                <div class="legend-continuous-ticks">
+                  <span>Low</span>
+                  <span>Moderate</span>
+                  <span>High</span>
+                  <span>Extreme</span>
+                </div>
+              </div>
+              <span class="legend-continuous-label">10</span>
+              <div class="legend-mode-badges">
+                <span class="legend-mode-badge actual-badge">● Actual</span>
+                <span class="legend-mode-badge pred-badge">◆ Predicted</span>
+                <span class="legend-mode-badge rain-badge">▲ Rainfall</span>
+              </div>
+            </div>
+          </div>
+        </section>
+        <!-- ══════════════════════════════ END MAP PANEL ══════════════════════════── -->
 
         <section class="panel">
           <div class="panel-head">
@@ -157,72 +314,6 @@
           </div>
           <div id="history-list" class="history-list empty-state">
             Loading recent runs...
-          </div>
-        </section>
-
-        <section class="panel panel-map">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Geo view</p>
-              <h2>Hong Kong district risk map</h2>
-            </div>
-            <span class="timestamp">Real district boundaries</span>
-          </div>
-          <div class="map-panel">
-            <div class="map-stage">
-              <svg
-                id="hk-risk-map"
-                class="hk-map"
-                viewBox="0 0 1000 740"
-                role="img"
-                aria-labelledby="hk-map-title hk-map-desc"
-              >
-                <title id="hk-map-title">Hong Kong district risk map</title>
-                <desc id="hk-map-desc">Real Hong Kong district boundaries colored by live flood risk score.</desc>
-                <defs>
-                  <radialGradient id="map-vignette" cx="50%" cy="42%" r="74%">
-                    <stop offset="0%" stop-color="rgba(36, 201, 255, 0.18)"></stop>
-                    <stop offset="100%" stop-color="rgba(1, 9, 15, 0)"></stop>
-                  </radialGradient>
-                </defs>
-                <rect class="map-backdrop" x="0" y="0" width="1000" height="740"></rect>
-                <rect class="map-glow" x="0" y="0" width="1000" height="740" fill="url(#map-vignette)"></rect>
-                <g id="hk-map-grid" class="map-grid"></g>
-                <g id="hk-map-districts" class="map-districts"></g>
-              </svg>
-
-              <aside class="map-inspector" id="map-inspector">
-                <div class="map-inspector-top">
-                  <span class="card-label">Selection</span>
-                  <span id="map-inspector-pill" class="alert-pill neutral">No run</span>
-                </div>
-                <h3 id="map-inspector-name">Hong Kong</h3>
-                <p id="map-inspector-copy" class="map-copy">
-                  Load a live assessment to color the real district boundaries and inspect each district.
-                </p>
-                <div class="map-inspector-metrics">
-                  <article>
-                    <span class="metric-label">District risk</span>
-                    <strong id="map-inspector-score">--</strong>
-                  </article>
-                  <article>
-                    <span class="metric-label">Driver</span>
-                    <strong id="map-inspector-driver">--</strong>
-                  </article>
-                  <article>
-                    <span class="metric-label">Confidence</span>
-                    <strong id="map-inspector-confidence">--</strong>
-                  </article>
-                </div>
-              </aside>
-            </div>
-
-            <div class="map-legend">
-              <span><i class="legend-swatch low"></i> Low</span>
-              <span><i class="legend-swatch medium"></i> Moderate</span>
-              <span><i class="legend-swatch high"></i> High</span>
-              <span><i class="legend-swatch extreme"></i> Extreme</span>
-            </div>
           </div>
         </section>
       </main>
