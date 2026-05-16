@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flood Watch HK</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="ambient ambient-one"></div>
+      <div class="ambient ambient-two"></div>
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Hong Kong Flood Swarm</p>
+          <h1>City-scale flood intelligence with a live operator console.</h1>
+          <p class="hero-text">
+            Trigger live flood assessments, review specialist signals, and scan recent alert history from one responsive dashboard.
+          </p>
+          <div class="hero-actions">
+            <button id="run-live-btn" class="action-btn primary" type="button">Run live assessment</button>
+            <button id="load-latest-btn" class="action-btn secondary" type="button">Load latest snapshot</button>
+          </div>
+          <p id="status-line" class="status-line">Ready for the next live run.</p>
+        </div>
+        <section class="hero-card">
+          <div class="hero-card-top">
+            <span class="card-label">Current status</span>
+            <span id="hero-alert-pill" class="alert-pill neutral">No run loaded</span>
+          </div>
+          <div class="metric-strip">
+            <article>
+              <span class="metric-label">Overall risk</span>
+              <strong id="hero-risk-score">--</strong>
+            </article>
+            <article>
+              <span class="metric-label">Confidence</span>
+              <strong id="hero-confidence">--</strong>
+            </article>
+            <article>
+              <span class="metric-label">Priority</span>
+              <strong id="hero-priority">--</strong>
+            </article>
+          </div>
+          <div class="live-grid" id="top-district-chips"></div>
+        </section>
+      </header>
+
+      <main class="dashboard-grid">
+        <section class="panel panel-narrative">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Alert brief</p>
+              <h2>Operator narrative</h2>
+            </div>
+            <span id="generated-at" class="timestamp">Awaiting data</span>
+          </div>
+          <div class="narrative-columns">
+            <article>
+              <h3>English</h3>
+              <p id="narrative-en">Run an assessment or open a recent snapshot to populate the briefing.</p>
+            </article>
+            <article>
+              <h3>Traditional Chinese</h3>
+              <p id="narrative-tc">執行評估或載入最近快照後，這裡會顯示警報摘要。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">District heat</p>
+              <h2>Top exposed districts</h2>
+            </div>
+          </div>
+          <div id="district-list" class="district-list empty-state">
+            District scores will appear here.
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Actions</p>
+              <h2>Recommended response</h2>
+            </div>
+          </div>
+          <div id="actions-list" class="stack-list empty-state">
+            Recommended actions will appear here.
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Signals</p>
+              <h2>Specialist agents</h2>
+            </div>
+          </div>
+          <div id="agents-grid" class="agents-grid empty-state">
+            Agent diagnostics will appear here.
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Compound risk</p>
+              <h2>Escalation flags</h2>
+            </div>
+          </div>
+          <div id="flags-list" class="stack-list empty-state">
+            Compound flags will appear here.
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Run history</p>
+              <h2>Recent snapshots</h2>
+            </div>
+          </div>
+          <div id="history-list" class="history-list empty-state">
+            Loading recent runs...
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
