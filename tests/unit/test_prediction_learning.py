@@ -8,10 +8,12 @@ from app.models.schemas import (
     AlertLevel,
     DistrictScore,
     FloodAlertOutput,
+    LearningSummary,
     PredictionValidation,
     PredictionWindow,
     RecommendedAction,
     SystemHealth,
+    LettaLearningDetails,
     UpdatePriority,
 )
 from app.services.prediction_learning import PredictionLearningService
@@ -105,6 +107,35 @@ def test_run_history_returns_none_when_no_prediction_match(tmp_path):
     assert history.find_prediction_match(actual_time=actual_time, tolerance_minutes=5) is None
 
 
+def test_run_history_recent_runs_include_learning_details(tmp_path):
+    history = RunHistoryService(tmp_path)
+    run = _make_run(
+        run_id="recent",
+        generated_at=datetime(2026, 5, 16, 12, 0, tzinfo=UTC),
+        score=5.0,
+        alert_level=AlertLevel.YELLOW,
+    )
+    run.learning_summary = LearningSummary(
+        source="letta+local",
+        summary_text="Recent calibration summary.",
+        recent_validation_count=2,
+    )
+    run.letta_learning = LettaLearningDetails(
+        enabled=True,
+        summary_requested=True,
+        summary_source="letta+local",
+        summary_fetch_succeeded=True,
+        summary_text="Recent calibration summary.",
+        lesson_store_attempted=False,
+    )
+    (tmp_path / "recent.json").write_text(run.model_dump_json(indent=2), encoding="utf-8")
+
+    recent_runs = history.list_recent_runs(limit=1)
+    assert len(recent_runs) == 1
+    assert recent_runs[0]["learning_summary"]["source"] == "letta+local"
+    assert recent_runs[0]["letta_learning"]["summary_fetch_succeeded"] is True
+
+
 def test_run_history_skips_malformed_log_and_builds_summary(tmp_path):
     history = RunHistoryService(tmp_path)
     (tmp_path / "broken.json").write_text("{not-json", encoding="utf-8")
@@ -171,6 +202,10 @@ def test_prediction_learning_builds_validation_and_summary(tmp_path, monkeypatch
     assert outcome.learning_summary.recent_validation_count == 1
     assert "Mean signed error" in outcome.learning_summary.summary_text
     assert current.learning_summary is not None
+    assert current.letta_learning is not None
+    assert current.letta_learning.summary_source == "local"
+    assert current.letta_learning.lesson_store_attempted is True
+    assert current.letta_learning.lesson_store_succeeded is False
 
 
 def test_prediction_learning_degrades_gracefully_when_letta_fails(tmp_path, monkeypatch):
@@ -218,6 +253,9 @@ def test_prediction_learning_degrades_gracefully_when_letta_fails(tmp_path, monk
     assert outcome.validation is not None
     assert current.prediction_window is not None
     assert current.validation is not None
+    assert current.letta_learning is not None
+    assert current.letta_learning.summary_fetch_succeeded is False
+    assert current.letta_learning.lesson_store_succeeded is False
 
 
 def test_prediction_learning_prefers_local_summary_when_letta_disabled(tmp_path, monkeypatch):
@@ -275,6 +313,21 @@ def test_run_history_builds_accuracy_report(tmp_path):
         alert_level_match=True,
         within_tolerance=True,
     )
+    validated.learning_summary = LearningSummary(
+        source="letta+local",
+        summary_text="Compact Letta-backed calibration summary.",
+        recent_validation_count=1,
+    )
+    validated.letta_learning = LettaLearningDetails(
+        enabled=True,
+        summary_requested=True,
+        summary_source="letta+local",
+        summary_fetch_succeeded=True,
+        summary_text="Compact Letta-backed calibration summary.",
+        lesson_store_attempted=True,
+        lesson_store_succeeded=True,
+        lesson_store_acknowledgement="Stored.",
+    )
     (tmp_path / "validated.json").write_text(validated.model_dump_json(indent=2), encoding="utf-8")
 
     report = history.build_accuracy_report()
@@ -282,3 +335,6 @@ def test_run_history_builds_accuracy_report(tmp_path):
     assert report["rolling_accuracy_percent"] == 93.0
     assert report["points"][0]["risk_accuracy_percent"] == 90.0
     assert report["points"][0]["alert_accuracy_percent"] == 100.0
+    assert report["points"][0]["learning_source"] == "letta+local"
+    assert report["points"][0]["letta_summary_source"] == "letta+local"
+    assert report["points"][0]["letta_lesson_store_succeeded"] is True

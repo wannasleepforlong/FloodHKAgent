@@ -25,6 +25,10 @@ class RunHistoryService:
                     "top_risk_districts": payload.get("top_risk_districts", []),
                     "next_update_priority": payload.get("next_update_priority"),
                     "confidence_overall": payload.get("confidence_overall"),
+                    "prediction_window": payload.get("prediction_window"),
+                    "validation": payload.get("validation"),
+                    "learning_summary": payload.get("learning_summary"),
+                    "letta_learning": payload.get("letta_learning"),
                 }
             )
             if len(runs) >= limit:
@@ -139,6 +143,25 @@ class RunHistoryService:
                     "abs_risk_score_error": run.validation.abs_risk_score_error,
                     "alert_level_match": run.validation.alert_level_match,
                     "target_horizon_minutes": run.prediction_window.target_horizon_minutes,
+                    "learning_source": run.learning_summary.source if run.learning_summary is not None else None,
+                    "letta_summary_source": (
+                        run.letta_learning.summary_source if run.letta_learning is not None else None
+                    ),
+                    "letta_summary_fetch_succeeded": (
+                        run.letta_learning.summary_fetch_succeeded
+                        if run.letta_learning is not None
+                        else None
+                    ),
+                    "letta_lesson_store_succeeded": (
+                        run.letta_learning.lesson_store_succeeded
+                        if run.letta_learning is not None
+                        else None
+                    ),
+                    "letta_lesson_store_acknowledgement": (
+                        run.letta_learning.lesson_store_acknowledgement
+                        if run.letta_learning is not None
+                        else None
+                    ),
                 }
             )
             if len(points) >= limit:

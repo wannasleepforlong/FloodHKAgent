@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.models.schemas import FloodAlertOutput, LearningSummary, PredictionValidation, PredictionWindow
+from app.models.schemas import (
+    FloodAlertOutput,
+    LearningSummary,
+    LettaLearningDetails,
+    PredictionValidation,
+    PredictionWindow,
+)
 from app.services.letta import LettaLearningClient
 from app.services.run_history import RunHistoryService
 from app.services.utils import abs_minutes_between, add_minutes
@@ -27,46 +33,74 @@ class PredictionLearningService:
         self.settings = settings
         self.run_history = run_history
         self.letta_client = letta_client or LettaLearningClient(settings)
+        self._last_letta_details = self._fresh_letta_details()
 
     async def get_learning_summary(self) -> LearningSummary | None:
+        letta_details = self._fresh_letta_details()
         local_summary = self.run_history.build_learning_summary(limit=10)
         if self.letta_client.enabled:
+            letta_details.summary_requested = True
             try:
                 letta_text = await self.letta_client.fetch_learning_summary()
             except Exception as exc:  # pragma: no cover - depends on remote runtime
+                letta_details.summary_fetch_succeeded = False
+                letta_details.summary_fetch_error = str(exc)
                 print(f"[learning][letta] summary fetch failed: {exc}")
             else:
                 if letta_text:
+                    letta_details.summary_fetch_succeeded = True
+                    letta_details.summary_text = letta_text
                     print("[learning] using Letta-backed summary for prompt injection")
                     if local_summary is None:
+                        letta_details.summary_source = "letta"
+                        self._last_letta_details = letta_details
                         return LearningSummary(
                             source="letta",
                             summary_text=letta_text,
                             recent_validation_count=0,
                         )
+                    letta_details.summary_source = "letta+local"
+                    self._last_letta_details = letta_details
                     return local_summary.model_copy(
                         update={"source": "letta+local", "summary_text": letta_text}
                     )
+                letta_details.summary_fetch_succeeded = False
+                letta_details.summary_fetch_error = "Letta returned no summary text."
         if local_summary is not None:
+            letta_details.summary_source = local_summary.source
             print("[learning] using local validation summary for prompt injection")
+        self._last_letta_details = letta_details
         return local_summary
 
     async def finalize_run(self, output: FloodAlertOutput) -> LearningOutcome:
+        letta_details = self._last_letta_details.model_copy(deep=True)
         prediction_window = self.build_prediction_window(output)
         validation = self._validate_against_history(output, prediction_window)
         output.prediction_window = prediction_window
         output.validation = validation
         learning_summary = self.run_history.build_learning_summary(limit=10, pending_validation=validation)
         output.learning_summary = learning_summary
+        if learning_summary is not None and letta_details.summary_source is None:
+            letta_details.summary_source = learning_summary.source
+            if learning_summary.source.startswith("letta") and letta_details.summary_text is None:
+                letta_details.summary_text = learning_summary.summary_text
         if validation is not None:
             print(
                 "[learning] validated prior prediction "
                 f"run={validation.matched_run_id} error={validation.risk_score_error:.2f} "
                 f"delta_min={validation.time_delta_minutes:.2f}"
             )
-            await self._store_lesson(validation=validation, output=output, summary=learning_summary)
+            letta_details = await self._store_lesson(
+                validation=validation,
+                output=output,
+                summary=learning_summary,
+                letta_details=letta_details,
+            )
         else:
+            letta_details.lesson_store_skipped_reason = "No prior prediction matched current run time."
             print("[learning] no prior prediction matched current run time")
+        output.letta_learning = letta_details
+        self._last_letta_details = self._fresh_letta_details()
         return LearningOutcome(
             prediction_window=prediction_window,
             validation=validation,
@@ -120,17 +154,26 @@ class PredictionLearningService:
         validation: PredictionValidation,
         output: FloodAlertOutput,
         summary: LearningSummary | None,
-    ) -> None:
+        letta_details: LettaLearningDetails,
+    ) -> LettaLearningDetails:
+        letta_details.lesson_store_attempted = True
         if not self.letta_client.enabled:
+            letta_details.lesson_store_attempted = False
+            letta_details.lesson_store_skipped_reason = "Letta is not configured."
             print("[learning][letta] skipped memory write because Letta is not configured")
-            return
+            return letta_details
         lesson = self._format_lesson(validation=validation, output=output, summary=summary)
         try:
             acknowledgement = await self.letta_client.store_validation_lesson(lesson)
         except Exception as exc:  # pragma: no cover - depends on remote runtime
+            letta_details.lesson_store_succeeded = False
+            letta_details.lesson_store_error = str(exc)
             print(f"[learning][letta] lesson write failed: {exc}")
-            return
+            return letta_details
+        letta_details.lesson_store_succeeded = True
+        letta_details.lesson_store_acknowledgement = acknowledgement
         print(f"[learning][letta] ack={acknowledgement or 'no acknowledgement text'}")
+        return letta_details
 
     def _format_lesson(
         self,
@@ -154,3 +197,6 @@ class PredictionLearningService:
             f"- current_rolling_summary: {summary_text}\n"
             f"- operator_narrative: {output.narrative_en}"
         )
+
+    def _fresh_letta_details(self) -> LettaLearningDetails:
+        return LettaLearningDetails(enabled=self.letta_client.enabled)

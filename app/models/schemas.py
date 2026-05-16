@@ -162,6 +162,21 @@ class LearningSummary(StrictModel):
     recent_validation_count: int = Field(ge=0)
 
 
+class LettaLearningDetails(StrictModel):
+    enabled: bool
+    summary_requested: bool = False
+    summary_source: str | None = None
+    summary_fetch_succeeded: bool | None = None
+    summary_fetch_error: str | None = None
+    summary_text: str | None = None
+    lesson_store_attempted: bool = False
+    lesson_store_succeeded: bool | None = None
+    lesson_store_error: str | None = None
+    lesson_store_acknowledgement: str | None = None
+    lesson_store_skipped_reason: str | None = None
+    backfilled_from_legacy_log: bool = False
+
+
 class FloodAlertOutput(StrictModel):
     run_id: str = Field(default_factory=lambda: str(uuid4()))
     generated_at: datetime
@@ -183,6 +198,7 @@ class FloodAlertOutput(StrictModel):
     prediction_window: PredictionWindow | None = None
     validation: PredictionValidation | None = None
     learning_summary: LearningSummary | None = None
+    letta_learning: LettaLearningDetails | None = None
 
 
 class RunAlertRequest(StrictModel):
