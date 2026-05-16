@@ -10,11 +10,6 @@ from app.models.schemas import AgentAssessment, AgentSignal, PeerQuery, PeerResp
 from app.services.utils import all_district_scores, clamp_score, parse_iso8601, safe_float, utc_now
 
 
-def table_to_dicts(table: dict[str, Any]) -> list[dict[str, Any]]:
-    fields = table.get("fields", [])
-    return [dict(zip(fields, row)) for row in table.get("data", [])]
-
-
 class TideAgent(BaseFloodAgent):
     agent_id = "TideAgent"
     prompt_file = "tide_system.txt"
@@ -33,15 +28,15 @@ class TideAgent(BaseFloodAgent):
         latest_freshness = utc_now()
 
         for station, station_data in data.get("stations", {}).items():
-            hhot_rows = table_to_dicts(station_data.get("hhot", {}))
-            hlt_rows = table_to_dicts(station_data.get("hlt", {}))
+            hhot_table = station_data.get("hhot", {})
+            hlt_table = station_data.get("hlt", {})
             gauge_meta = TIDE_GAUGES[station]
 
-            latest_height = self._extract_latest_height(hhot_rows)
-            next_peak = self._extract_next_peak(hlt_rows)
+            latest_height = self._extract_latest_height(hhot_table)
+            next_peak = self._extract_next_peak(hlt_table)
             latest_freshness = min(
                 latest_freshness,
-                parse_iso8601(station_data.get("hhot", {}).get("updateTime") or data.get("as_of")),
+                parse_iso8601(hhot_table.get("updateTime") or data.get("as_of")),
             )
 
             station_summaries[station] = {
@@ -78,10 +73,8 @@ class TideAgent(BaseFloodAgent):
         summaries: dict[str, Any] = {}
         for station, station_data in self._last_payload.get("stations", {}).items():
             summaries[station] = {
-                "latest_height_m": self._extract_latest_height(
-                    table_to_dicts(station_data.get("hhot", {}))
-                ),
-                "next_peak": self._extract_next_peak(table_to_dicts(station_data.get("hlt", {}))),
+                "latest_height_m": self._extract_latest_height(station_data.get("hhot", {})),
+                "next_peak": self._extract_next_peak(station_data.get("hlt", {})),
             }
         return PeerResponse(
             from_agent=self.agent_id,
@@ -91,39 +84,97 @@ class TideAgent(BaseFloodAgent):
         )
 
     @staticmethod
-    def _extract_latest_height(rows: list[dict[str, Any]]) -> float | None:
+    def _extract_latest_height(
+        table: dict[str, Any], now: datetime | None = None
+    ) -> float | None:
+        rows = table.get("data", [])
         if not rows:
             return None
-        latest = rows[-1]
-        for key, value in latest.items():
-            if "height" in key.lower():
-                return safe_float(value)
-        for value in latest.values():
-            height = safe_float(value)
-            if height is not None:
-                return height
+
+        current = now or utc_now()
+        for row in reversed(rows):
+            row_month = TideAgent._parse_int(row[0] if len(row) > 0 else None)
+            row_day = TideAgent._parse_int(row[1] if len(row) > 1 else None)
+            if row_month is None or row_day is None:
+                continue
+
+            if (row_month, row_day) > (current.month, current.day):
+                continue
+
+            latest_hour = current.hour if (row_month, row_day) == (current.month, current.day) else 24
+            for hour in range(latest_hour, 0, -1):
+                column_index = hour + 1
+                if column_index >= len(row):
+                    continue
+                height = safe_float(row[column_index])
+                if height is not None:
+                    return height
         return None
 
     @staticmethod
-    def _extract_next_peak(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    def _extract_next_peak(
+        table: dict[str, Any], now: datetime | None = None
+    ) -> dict[str, Any] | None:
+        rows = table.get("data", [])
         if not rows:
             return None
-        now = utc_now()
+
+        current = now or utc_now()
         candidates: list[tuple[datetime, dict[str, Any]]] = []
         for row in rows:
-            parsed_time = None
-            for value in row.values():
-                if isinstance(value, str):
-                    try:
-                        parsed_time = parse_iso8601(value)
-                        break
-                    except ValueError:
-                        continue
-            if parsed_time is None or parsed_time < now:
+            row_month = TideAgent._parse_int(row[0] if len(row) > 0 else None)
+            row_day = TideAgent._parse_int(row[1] if len(row) > 1 else None)
+            if row_month is None or row_day is None:
                 continue
-            candidates.append((parsed_time, row))
+
+            for offset in range(2, len(row), 3):
+                if offset + 2 >= len(row):
+                    continue
+                time_str = row[offset]
+                if not isinstance(time_str, str) or not time_str.strip():
+                    continue
+
+                try:
+                    hour_str, minute_str = time_str.split(":", maxsplit=1)
+                    event_time = current.replace(
+                        month=row_month,
+                        day=row_day,
+                        hour=int(hour_str),
+                        minute=int(minute_str),
+                        second=0,
+                        microsecond=0,
+                    )
+                except ValueError:
+                    continue
+
+                if event_time < current:
+                    continue
+
+                event_type = str(row[offset + 2]).strip().upper()
+                if event_type != "H":
+                    continue
+
+                candidates.append(
+                    (
+                        event_time,
+                        {
+                            "month": row_month,
+                            "date": row_day,
+                            "time": time_str,
+                            "height_m": safe_float(row[offset + 1]),
+                            "type": event_type,
+                        },
+                    )
+                )
         if not candidates:
             return None
         candidates.sort(key=lambda item: item[0])
         event_time, row = candidates[0]
         return {"time": event_time.isoformat(), "raw": row}
+
+    @staticmethod
+    def _parse_int(value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None

@@ -10,6 +10,7 @@ from app.settings import Settings
 try:
     from agents import (
         Agent,
+        AgentOutputSchema,
         AsyncOpenAI,
         ModelSettings,
         OpenAIChatCompletionsModel,
@@ -18,7 +19,7 @@ try:
         set_tracing_disabled,
     )
 except ImportError as exc:  # pragma: no cover - exercised only when deps are missing
-    Agent = AsyncOpenAI = ModelSettings = OpenAIChatCompletionsModel = RunConfig = Runner = None
+    Agent = AgentOutputSchema = AsyncOpenAI = ModelSettings = OpenAIChatCompletionsModel = RunConfig = Runner = None
     set_tracing_disabled = None
     IMPORT_ERROR = exc
 else:
@@ -92,7 +93,7 @@ class LLMRuntime:
             agent = Agent(
                 name=name,
                 instructions=instructions,
-                output_type=output_type,
+                output_type=AgentOutputSchema(output_type, strict_json_schema=False),
                 model=agent_model,
                 model_settings=ModelSettings(temperature=temperature),
             )
