@@ -539,7 +539,12 @@ async function triggerLiveRun() {
     });
     renderRun(run);
     await loadHistory();
-    setStatus(`Live assessment completed with ${run.alert_level} alert.`);
+    const horizonMinutes = run?.prediction_window?.target_horizon_minutes;
+    const scheduleText =
+      typeof horizonMinutes === "number"
+        ? ` Auto-runs are now armed every ${horizonMinutes} minutes while the server stays online.`
+        : "";
+    setStatus(`Live assessment completed with ${run.alert_level} alert.${scheduleText}`);
   } catch (error) {
     setStatus(`Unable to complete live assessment. ${error.message}`, true);
   } finally {

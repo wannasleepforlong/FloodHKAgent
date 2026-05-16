@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.models.schemas import FloodAlertOutput, RunAlertRequest
+from app.services.auto_runner import HorizonAutoRunService
 from app.services.orchestrator import FloodSwarmOrchestrator
 from app.services.run_history import RunHistoryService
 from app.settings import get_settings
@@ -15,6 +16,7 @@ from app.settings import get_settings
 
 settings = get_settings()
 orchestrator = FloodSwarmOrchestrator(settings=settings)
+auto_runner = HorizonAutoRunService(settings=settings, run_callback=orchestrator.run)
 run_history = RunHistoryService(settings.log_dir)
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 data_dir = Path(__file__).resolve().parent.parent.parent / "data"
@@ -23,6 +25,7 @@ data_dir = Path(__file__).resolve().parent.parent.parent / "data"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    await auto_runner.aclose()
     await orchestrator.aclose()
 
 
@@ -38,7 +41,12 @@ async def dashboard() -> FileResponse:
 
 @app.post("/runs/flood-alert", response_model=FloodAlertOutput)
 async def run_flood_alert(request: RunAlertRequest) -> FloodAlertOutput:
-    return await orchestrator.run(mode=request.mode)
+    return await auto_runner.run_manual(mode=request.mode)
+
+
+@app.get("/api/runs/schedule")
+async def get_schedule_status() -> dict[str, object]:
+    return auto_runner.get_status()
 
 
 @app.get("/api/runs/recent")

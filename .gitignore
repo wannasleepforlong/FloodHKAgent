@@ -2,12 +2,6 @@ data/
 .pytest_cache/
 .venv/
 logs/
-.envdata/ 
-__pycache__/ 
-*.pyc 
-data/ 
-__pycache__/ 
-*.pyc 
-data/ 
+.env
 __pycache__/ 
 *.pyc 
