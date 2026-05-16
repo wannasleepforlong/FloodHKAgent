@@ -182,6 +182,7 @@ class FloodAlertOutput(StrictModel):
     system_health: SystemHealth
     prediction_window: PredictionWindow | None = None
     validation: PredictionValidation | None = None
+    learning_summary: LearningSummary | None = None
 
 
 class RunAlertRequest(StrictModel):

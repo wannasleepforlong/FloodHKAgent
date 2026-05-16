@@ -57,6 +57,7 @@ class PredictionLearningService:
         output.prediction_window = prediction_window
         output.validation = validation
         learning_summary = self.run_history.build_learning_summary(limit=10, pending_validation=validation)
+        output.learning_summary = learning_summary
         if validation is not None:
             print(
                 "[learning] validated prior prediction "

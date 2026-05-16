@@ -170,6 +170,7 @@ def test_prediction_learning_builds_validation_and_summary(tmp_path, monkeypatch
     assert outcome.learning_summary is not None
     assert outcome.learning_summary.recent_validation_count == 1
     assert "Mean signed error" in outcome.learning_summary.summary_text
+    assert current.learning_summary is not None
 
 
 def test_prediction_learning_degrades_gracefully_when_letta_fails(tmp_path, monkeypatch):

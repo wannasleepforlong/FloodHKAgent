@@ -179,6 +179,12 @@ select {
   gap: 1rem;
 }
 
+.panel-meta {
+  display: grid;
+  justify-items: end;
+  gap: 0.25rem;
+}
+
 .metric-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -396,6 +402,29 @@ select {
 .flag-item {
   display: grid;
   gap: 0.55rem;
+}
+
+.learning-item {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.learning-copy {
+  margin: 0;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.learning-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.learning-metric {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.9rem;
+  background: rgba(124, 224, 255, 0.08);
 }
 
 .agents-grid {

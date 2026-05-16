@@ -22,6 +22,16 @@ class LettaLearningClient:
             and Letta is not None
         )
 
+    def _horizon_label(self) -> str:
+        minutes = self.settings.prediction_horizon_minutes
+        if minutes == 60:
+            return "the one-hour forecast horizon"
+        if minutes % 60 == 0:
+            hours = minutes // 60
+            unit = "hour" if hours == 1 else "hours"
+            return f"the {hours}-{unit} forecast horizon"
+        return f"the {minutes}-minute forecast horizon"
+
     @property
     def enabled(self) -> bool:
         return self._enabled
@@ -44,7 +54,7 @@ class LettaLearningClient:
             return None
         print("[learning][letta] storing validation lesson")
         prompt = (
-            "Store the following validated flood-prediction lesson in memory. "
+            f"Store the following validated flood-prediction lesson in memory for {self._horizon_label()}. "
             "Update your internal memory with recurring bias, calibration advice, and horizon-specific guidance. "
             "Reply with a one-line acknowledgement only.\n\n"
             f"{lesson_text}"
@@ -56,7 +66,7 @@ class LettaLearningClient:
             return None
         print("[learning][letta] requesting learning summary")
         prompt = (
-            "Return a compact summary of your current learning for Hong Kong flood prediction at the configured horizon. "
+            f"Return a compact summary of your current learning for Hong Kong flood prediction at {self._horizon_label()}. "
             "Include recent bias direction, approximate hit rate, and up to 3 adjustment rules. "
             "Keep the answer under 120 words."
         )

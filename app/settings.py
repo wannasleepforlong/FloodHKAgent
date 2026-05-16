@@ -107,7 +107,7 @@ def get_settings() -> Settings:
         ),
         log_dir=log_dir,
         prediction_horizon_minutes=int(
-            os.getenv("FLOOD_SWARM_PREDICTION_HORIZON_MINUTES", "180")
+            os.getenv("FLOOD_SWARM_PREDICTION_HORIZON_MINUTES", "60")
         ),
         prediction_matching_tolerance_minutes=int(
             os.getenv("FLOOD_SWARM_MATCH_TOLERANCE_MINUTES", "5")

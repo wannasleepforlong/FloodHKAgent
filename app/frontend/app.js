@@ -3,6 +3,7 @@ const state = {
   history: [],
   geojson: null,
   selectedDistrict: null,
+  lastLoadedAt: null,
 };
 
 const elements = {
@@ -15,8 +16,10 @@ const elements = {
   heroPriority: document.querySelector("#hero-priority"),
   topDistrictChips: document.querySelector("#top-district-chips"),
   generatedAt: document.querySelector("#generated-at"),
+  loadedAt: document.querySelector("#loaded-at"),
   narrativeEn: document.querySelector("#narrative-en"),
   narrativeTc: document.querySelector("#narrative-tc"),
+  learningPanel: document.querySelector("#learning-panel"),
   districtList: document.querySelector("#district-list"),
   actionsList: document.querySelector("#actions-list"),
   agentsGrid: document.querySelector("#agents-grid"),
@@ -78,6 +81,52 @@ function renderTopDistrictChips(run) {
     .slice(0, 6)
     .map((district) => `<span class="district-chip">${escapeHtml(district)}</span>`)
     .join("");
+}
+
+function renderLearning(run) {
+  const summary = run?.learning_summary;
+  const validation = run?.validation;
+  const prediction = run?.prediction_window;
+
+  if (!summary && !validation && !prediction) {
+    elements.learningPanel.className = "stack-list empty-state";
+    elements.learningPanel.textContent =
+      "Learning feedback will appear here after a prediction is validated.";
+    return;
+  }
+
+  const sourceLabel = summary?.source ? `Source: ${summary.source}` : "Source: local run data";
+  const summaryText =
+    summary?.summary_text ??
+    "This run recorded a prediction window, but no validated lesson is available yet.";
+
+  const metrics = validation
+    ? `
+      <div class="learning-metrics">
+        <span class="learning-metric"><span class="mini-label">Matched run</span> ${escapeHtml(validation.matched_run_id)}</span>
+        <span class="learning-metric"><span class="mini-label">Score error</span> ${escapeHtml(validation.risk_score_error.toFixed(2))}</span>
+        <span class="learning-metric"><span class="mini-label">Abs error</span> ${escapeHtml(validation.abs_risk_score_error.toFixed(2))}</span>
+        <span class="learning-metric"><span class="mini-label">Alert match</span> ${validation.alert_level_match ? "Yes" : "No"}</span>
+      </div>
+    `
+    : `
+      <div class="learning-metrics">
+        <span class="learning-metric"><span class="mini-label">Prediction target</span> ${escapeHtml(formatTimestamp(prediction?.target_time))}</span>
+        <span class="learning-metric"><span class="mini-label">Status</span> Awaiting future validation</span>
+      </div>
+    `;
+
+  elements.learningPanel.className = "stack-list";
+  elements.learningPanel.innerHTML = `
+    <article class="action-item learning-item">
+      <div class="district-top">
+        <strong>What the system has learned</strong>
+        <span class="mini-pill">${escapeHtml(sourceLabel)}</span>
+      </div>
+      <p class="learning-copy">${escapeHtml(summaryText)}</p>
+      ${metrics}
+    </article>
+  `;
 }
 
 function renderDistricts(run) {
@@ -414,6 +463,7 @@ function renderMap(run) {
 
 function renderRun(run) {
   state.currentRun = run;
+  state.lastLoadedAt = new Date().toISOString();
   const alertLevel = run?.alert_level ?? "UNKNOWN";
   const alertClass = alertClassMap[alertLevel] ?? "neutral";
   elements.heroAlertPill.className = `alert-pill ${alertClass}`;
@@ -422,12 +472,14 @@ function renderRun(run) {
     typeof run?.overall_risk_score === "number" ? run.overall_risk_score.toFixed(1) : "--";
   elements.heroConfidence.textContent = formatPercent(run?.confidence_overall);
   elements.heroPriority.textContent = run?.next_update_priority ?? "--";
-  elements.generatedAt.textContent = formatTimestamp(run?.generated_at);
+  elements.generatedAt.textContent = `Run time ${formatTimestamp(run?.generated_at)}`;
+  elements.loadedAt.textContent = `Loaded ${formatTimestamp(state.lastLoadedAt)}`;
   elements.narrativeEn.textContent =
     run?.narrative_en ?? "Run an assessment or open a recent snapshot to populate the briefing.";
   elements.narrativeTc.textContent =
     run?.narrative_tc ?? "執行評估或載入最近快照後，這裡會顯示警報摘要。";
   renderTopDistrictChips(run);
+  renderLearning(run);
   renderDistricts(run);
   renderActions(run);
   renderAgents(run);

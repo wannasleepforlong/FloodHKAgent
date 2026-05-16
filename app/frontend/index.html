@@ -59,7 +59,10 @@
               <p class="eyebrow">Alert brief</p>
               <h2>Operator narrative</h2>
             </div>
-            <span id="generated-at" class="timestamp">Awaiting data</span>
+            <div class="panel-meta">
+              <span id="generated-at" class="timestamp">Awaiting data</span>
+              <span id="loaded-at" class="timestamp">Not loaded yet</span>
+            </div>
           </div>
           <div class="narrative-columns">
             <article>
@@ -70,6 +73,18 @@
               <h3>Traditional Chinese</h3>
               <p id="narrative-tc">執行評估或載入最近快照後，這裡會顯示警報摘要。</p>
             </article>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Learning loop</p>
+              <h2>Prediction feedback</h2>
+            </div>
+          </div>
+          <div id="learning-panel" class="stack-list empty-state">
+            Learning feedback will appear here after a prediction is validated.
           </div>
         </section>
 
